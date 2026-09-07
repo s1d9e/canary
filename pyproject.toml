@@ -1,0 +1,74 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "canary"
+version = "0.1.0"
+description = "HoneyNet - Centralized Honeypot Aggregation & MITRE ATT&CK Threat Correlation Platform"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "s1d9e"}
+]
+keywords = ["security", "honeypot", "deception", "mitre-attack", "threat-intelligence", "cybersecurity"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+]
+dependencies = [
+    "typer[all]>=0.9.0",
+    "rich>=13.0.0",
+    "pydantic>=2.0.0",
+    "pyyaml>=6.0",
+    "aiosqlite>=0.19.0",
+    "sqlalchemy>=2.0.0",
+    "flask>=3.0.0",
+    "aiohttp>=3.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.8.0",
+]
+
+[project.scripts]
+canary = "canary.cli.main:app"
+
+[project.urls]
+Homepage = "https://github.com/s1d9e/canary"
+Repository = "https://github.com/s1d9e/canary"
+Issues = "https://github.com/s1d9e/canary/issues"
+
+[tool.setuptools.packages.find]
+include = ["canary*"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "S", "B", "A", "COM", "C4", "DTZ", "ISC", "ICN", "PIE", "PT", "RSE", "RET", "SLF", "TID", "TCH", "ARG", "PTH", "ERA"]
+ignore = ["S101", "COM812", "ISC001", "S110"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["SLF001", "ARG001", "ARG002", "S105", "S106", "E501"]
+"canary/web/*" = ["E501"]
+"canary/cli/main.py" = ["SLF001", "B008"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

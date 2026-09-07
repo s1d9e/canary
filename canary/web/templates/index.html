@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Canary - Honeypot Intelligence</title>
+<style>
+  /* ============ Wireshark-style dark theme ============ */
+  :root {
+    --bg:        #0d0f12;
+    --bg-panel:  #131519;
+    --bg-hover:  #1c2026;
+    --bg-sel:    #232833;
+    --line:      #262a31;
+    --fg:        #d8dde4;
+    --fg-dim:    #6b7280;
+    --green:     #7ee787;
+    --cyan:      #5cd6e2;
+    --blue:      #7aa6ff;
+    --purple:    #d2a8ff;
+    --yellow:    #eac54f;
+    --orange:    #ffa657;
+    --red:       #ff7b72;
+    --pink:      #ff7eb6;
+    --link:      #79b8ff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: "JetBrains Mono", "Cascadia Mono", Consolas, "Ubuntu Mono", monospace;
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #2c3340; border-radius: 0; }
+  ::-webkit-scrollbar-track { background: var(--bg-panel); }
+
+  /* ---- Menu bar ---- */
+  .menubar {
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    font-size: 12px;
+    user-select: none;
+  }
+  .menubar .label {
+    padding: 7px 10px;
+    color: #c9d1d9;
+  }
+  .menubar .label:hover { background: #24292f; }
+  .menubar .canary { color: var(--green); font-weight: bold; padding: 7px 12px; letter-spacing: 1px; }
+
+  /* ---- Toolbar ---- */
+  .toolbar {
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--line);
+    padding: 4px 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .toolbar .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    border: 1px solid var(--line);
+    background: #1a1e24;
+    border-radius: 3px;
+    color: var(--fg-dim);
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .toolbar .btn:hover { background: #232833; color: var(--fg); }
+  .toolbar .btn.rec { color: var(--red); }
+  .toolbar .sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
+  .toolbar .spacer { flex: 1; }
+  .toolbar .right { color: var(--fg-dim); font-size: 11px; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; }
+
+  /* ---- Display filter bar ---- */
+  .filterbar {
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--line);
+    padding: 6px 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .filterbar .lbl {
+    background: #3a0b0e;
+    color: #ffa28b;
+    padding: 3px 8px;
+    font-size: 11px;
+    border-radius: 3px;
+    border: 1px solid #5a1620;
+    text-transform: uppercase;
+  }
+  .filterbar input {
+    flex: 1;
+    background: #05070a;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    color: var(--fg);
+    padding: 4px 10px;
+    font-family: inherit;
+    font-size: 12px;
+    outline: none;
+  }
+  .filterbar input:focus { border-color: var(--cyan); box-shadow: 0 0 0 1px rgba(92,214,226,.3); }
+  .filterbar .fbtn {
+    background: #223; color: var(--cyan);
+    border: 1px solid var(--line); padding: 4px 10px; font-size: 11px; border-radius: 3px; cursor: pointer;
+  }
+  .filterbar .fbtn:hover { border-color: var(--cyan); }
+
+  /* ---- Packet list ---- */
+  .main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  table.plist {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 12.5px;
+  }
+  table.plist th {
+    background: #14161a;
+    color: var(--fg-dim);
+    text-align: left;
+    padding: 5px 8px;
+    font-weight: normal;
+    border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; z-index: 2;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  table.plist td {
+    padding: 4px 8px;
+    border-bottom: 1px solid #171b20;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  table.plist tbody tr:hover { background: var(--bg-hover); }
+  table.plist tbody tr.sel { background: var(--bg-sel); }
+  .plist-wrap { flex: 1; overflow: auto; }
+  .src-ip  { color: var(--blue); }
+  .dst-ip  { color: var(--green); }
+  .proto   { color: var(--yellow); font-weight: bold; }
+  .proto.ssh  { color: var(--cyan); }
+  .proto.http { color: var(--green); }
+  .proto.ftp  { color: var(--orange); }
+  .proto.smb  { color: var(--purple); }
+  .proto.mysql{ color: var(--pink); }
+  .proto.telnet{color: var(--red); }
+  .info-tech   { color: var(--green); }
+  .info-tool   { color: var(--orange); }
+  .info-cmd    { color: var(--yellow); }
+  .info-dim    { color: var(--fg-dim); }
+  .no { color: var(--fg-dim); }
+
+  /* ---- Packet detail (inspector, like Wireshark's tree) ---- */
+  .inspector {
+    height: 38%;
+    min-height: 140px;
+    border-top: 1px solid var(--line);
+    background: var(--bg-panel);
+    display: flex;
+    flex-direction: column;
+    font-size: 12px;
+  }
+  .inspector .tabs { display: flex; border-bottom: 1px solid var(--line); }
+  .inspector .tabs span {
+    padding: 6px 14px; color: var(--fg-dim); cursor: pointer;
+  }
+  .inspector .tabs span.on { color: var(--fg); border-bottom: 2px solid var(--cyan); }
+  .inspector .tree { flex: 1; overflow: auto; padding: 8px 10px; }
+  .inspector .tree .section { color: var(--cyan); margin-bottom: 3px; }
+  .inspector .tree .f { margin-left: 18px; }
+  .inspector .tree .f b { color: #b8c4d0; font-weight: normal; }
+  .inspector .tree .v { color: var(--fg); }
+  .inspector .tree .v.green { color: var(--green); }
+  .inspector .tree .v.blue  { color: var(--blue); }
+  .inspector .tree .v.yellow{ color: var(--yellow); }
+
+  /* ---- Status bar ---- */
+  .statusbar {
+    background: var(--bg-panel);
+    border-top: 1px solid var(--line);
+    padding: 4px 10px;
+    display: flex;
+    gap: 18px;
+    color: var(--fg-dim);
+    font-size: 11px;
+  }
+  .statusbar b { color: var(--fg); font-weight: normal; }
+  .statusbar .green { color: var(--green); }
+  .statusbar .right { margin-left: auto; }
+
+  .empty {
+    color: var(--fg-dim);
+    text-align: center;
+    padding: 60px 20px;
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+
+  <!-- Menu bar -->
+  <div class="menubar">
+    <span class="canary">&#9670; CANARY</span>
+    <span class="label">File</span>
+    <span class="label">Edit</span>
+    <span class="label">View</span>
+    <span class="label">Capture</span>
+    <span class="label">Analyze</span>
+    <span class="label">Statistics</span>
+    <span class="label">Telephony</span>
+    <span class="label">Wireless</span>
+    <span class="label">Tools</span>
+    <span class="label">Help</span>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <span class="btn rec">&#9632; Stop</span>
+    <span class="btn">&#9654; Start</span>
+    <span class="btn">&#8635; Restart</span>
+    <span class="sep"></span>
+    <span class="btn">&#128269;</span>
+    <span class="sep"></span>
+    <span class="btn" onclick="exportStix()">&#8681; Export STIX</span>
+    <span class="btn" onclick="exportCsv()">&#128196; Export CSV</span>
+    <span class="spacer"></span>
+    <span class="right" id="capture-hint">Capture: live</span>
+  </div>
+
+  <!-- Display filter bar -->
+  <div class="filterbar">
+    <span class="lbl">Display Filter</span>
+    <input id="filter" placeholder="e.g. protocol == ssh, tool == nuclei, technique == T1110, src_ip == 203.0.113.7" spellcheck="false">
+    <span class="fbtn" onclick="applyFilter()">Apply</span>
+    <span class="fbtn" onclick="document.getElementById('filter').value=''; applyFilter();">Clear</span>
+  </div>
+
+  <!-- Packet list -->
+  <div class="main">
+    <div class="plist-wrap" id="plist">
+      <div class="empty">Capture offline. Start the ingestion API (canary serve) and post events...</div>
+    </div>
+
+    <!-- Inspector -->
+    <div class="inspector" id="inspector">
+      <div class="tabs">
+        <span class="on">Packet Details</span>
+        <span class="on" style="border-bottom-color:var(--yellow)">Bytes</span>
+      </div>
+      <div class="tree" id="tree"><div class="empty">Select a packet to inspect...</div></div>
+    </div>
+  </div>
+
+  <!-- Status bar -->
+  <div class="statusbar">
+    <span>Packets: <b id="sb-packets">0</b></span>
+    <span>Attackers: <b id="sb-attackers">0</b></span>
+    <span>Techniques: <b id="sb-techniques" class="green">0</b></span>
+    <span id="sb-profile" class="right"><span class="dot" style="background:var(--green)"></span> Profile: all</span>
+  </div>
+
+<script>
+"use strict";
+let events = [];
+let attackers = [];
+
+const PROTO_STYLE = { ssh:'ssh', http:'http', https:'http', ftp:'ftp', smb:'smb',
+                      mysql:'mysql', telnet:'telnet', smtp:'', dns:'', tcp:'', udp:'' };
+
+async function refresh() {
+  try {
+    const [ev, atk] = await Promise.all([
+      fetch('/api/events').then(r => r.json()),
+      fetch('/api/attackers').then(r => r.json()),
+    ]);
+    events = ev; attackers = atk;
+    render();
+  } catch (e) {
+    document.getElementById('plist').innerHTML =
+      '<div class="empty">Dashboard offline.</div>';
+  }
+}
+
+function matches(ev, q) {
+  if (!q) return true;
+  q = q.toLowerCase();
+  if (/^protocol\s*==\s*"?([\w-]+)"?/.test(q)) {
+    const m = q.match(/^protocol\s*==\s*"?([\w-]+)"?/);
+    return (ev.protocol || '').toLowerCase() === m[1].toLowerCase();
+  }
+  if (/^tool\s*==\s*"?([\w-]+)"?/.test(q)) {
+    const m = q.match(/^tool\s*==\s*"?([\w-]+)"?/);
+    return (ev.tool || '').toLowerCase() === m[1].toLowerCase();
+  }
+  if (/^technique\s*==\s*"?([\w-]+)"?/.test(q)) {
+    const m = q.match(/^technique\s*==\s*"?([\w-]+)"?/);
+    return (ev.technique || '').toLowerCase() === m[1].toLowerCase();
+  }
+  if (/^src_ip\s*==\s*"?([\w.:]+)"?/.test(q)) {
+    const m = q.match(/^src_ip\s*==\s*"?([\w.:]+)"?/);
+    return (ev.src_ip || '').toLowerCase() === m[1].toLowerCase();
+  }
+  if (/^event_type\s*==\s*"?(\w+)"?/.test(q)) {
+    const m = q.match(/^event_type\s*==\s*"?(\w+)"?/);
+    return (ev.event_type || '').toLowerCase() === m[1].toLowerCase();
+  }
+  const hay = [ev.protocol, ev.event_type, ev.src_ip, ev.honeypot, ev.technique,
+               ev.tool, ev.username, ev.url, ev.command].join(' ').toLowerCase();
+  return hay.includes(q);
+}
+
+function fmtTime(t) {
+  if (!t) return '-';
+  const d = new Date(t);
+  if (isNaN(d)) { const m = String(t).match(/T(\d{2}:\d{2}:\d{2})/); return m ? m[1] : t; }
+  return d.toTimeString().slice(0, 8) + '.' + String(d.getMilliseconds()).padStart(3, '0');
+}
+
+function protoLabel(ev) {
+  return (ev.protocol || ev.event_type || 'generic').toLowerCase();
+}
+
+function infoCell(ev) {
+  const bits = [];
+  if (ev.technique) bits.push(`<span class="info-tech">${esc(ev.technique)}</span>`);
+  if (ev.tool) bits.push(`<span class="info-tool">[${esc(ev.tool)}]</span>`);
+  if (ev.event_type === 'auth' && ev.username) bits.push(`<span class="info-cmd">login: ${esc(ev.username)}${ev.password ? '/' + esc(ev.password) : ''}</span>`);
+  if (ev.command) bits.push(`<span class="info-cmd">${esc(trunc(ev.command, 60))}</span>`);
+  else if (ev.url) bits.push(`<span class="info-cmd">${esc(trunc(ev.url, 60))}</span>`);
+  if ((ev.event_type === 'http' || ev.method) && ev.method) bits.push(`<span class="info-dim">${esc(ev.method)} ${ev.response_code ?? ''}</span>`);
+  if (bits.length === 0) bits.push(`<span class="info-dim">${esc((ev.raw || '').slice(0, 60)) || '&mdash;'}</span>`);
+  return bits.join(' ');
+}
+
+function render(selected) {
+  const q = document.getElementById('filter').value;
+  const rows = events.map((ev, i) => ({ ev, idx: events.length - i })).filter(x => matches(x.ev, q));
+  const wrap = document.getElementById('plist');
+  const techSet = new Set(attackers.flatMap(a => a.techniques || []));
+  const toolCount = attackers.filter(a => (a.tools || []).length).length;
+
+  document.getElementById('sb-packets').textContent = events.length + (q ? ' (filtered ' + rows.length + ')' : '');
+  document.getElementById('sb-attackers').textContent = attackers.length;
+  document.getElementById('sb-techniques').textContent = techSet.size;
+  if (q) document.getElementById('sb-profile').innerHTML =
+    '<span class="dot" style="background:var(--yellow)"></span> Filter: ' + esc(q);
+  else document.getElementById('sb-profile').innerHTML =
+    '<span class="dot" style="background:var(--green)"></span> Profile: all';
+
+  if (!rows.length) {
+    wrap.innerHTML = '<div class="empty">No packets match the display filter.</div>';
+    return;
+  }
+  const header = `<table class="plist"><colgroup>
+      <col style="width:44px"><col style="width:90px"><col style="width:130px">
+      <col style="width:130px"><col style="width:80px"><col style="width:50px"><col>
+    </colgroup><thead><tr>
+      <th>No.</th><th>Time</th><th>Source</th><th>Destination</th>
+      <th>Protocol</th><th>Len</th><th>Info</th>
+    </tr></thead><tbody>`;
+  const body = rows.map(({ ev, idx }, n) => {
+    const sel = selected ? (ev.id === selected.id ? ' sel' : '') : '';
+    const proto = protoLabel(ev);
+    const pcls = 'proto ' + (PROTO_STYLE[proto] || '');
+    const dst = ev.dst_ip || ev.honeypot || 'canary';
+    const len = (ev.raw || ev.command || ev.url || '').length;
+    return `<tr class="row${sel}" data-id="${ev.id}" onclick="selectPkt(${ev.id})">
+      <td class="no">${n + 1}</td>
+      <td>${fmtTime(ev.timestamp)}</td>
+      <td><span class="src-ip">${esc(ev.src_ip || '?')}</span>${ev.src_port ? ':' + ev.src_port : ''}</td>
+      <td><span class="dst-ip">${esc(dst)}</span>${ev.dst_port ? ':' + ev.dst_port : ''}</td>
+      <td class="${pcls}">${esc(proto)}</td>
+      <td>${len}</td>
+      <td>${infoCell(ev)}</td>
+    </tr>`;
+  }).join('');
+  wrap.innerHTML = header + body + '</tbody></table>';
+}
+
+function selectPkt(id) {
+  const ev = events.find(e => e.id === id);
+  if (!ev) return;
+  document.querySelectorAll('tr.row').forEach(r => r.classList.toggle('sel', +r.dataset.id === id));
+  renderInspector(ev);
+}
+
+function renderInspector(ev) {
+  const tree = document.getElementById('tree');
+  const proto = protoLabel(ev);
+  tree.innerHTML = `
+    <div class="section">&#9660; Frame ${ev.id}: ${esc(ev.event_type)} on ${esc(ev.honeypot)} (${len(ev)} bytes)</div>
+    <div class="f"><b>Arrival Time:</b> <span class="v">${new Date(ev.timestamp || Date.now()).toISOString()}</span></div>
+    <div class="section">&#9660; Internet Protocol</div>
+    <div class="f"><b>Source Address:</b> <span class="v blue">${esc(ev.src_ip || '?')}</span>${ev.src_port ? ':' + ev.src_port : ''}</div>
+    <div class="f"><b>Destination Address:</b> <span class="v green">${esc(ev.dst_ip || ev.honeypot || '?')}</span>${ev.dst_port ? ':' + ev.dst_port : ''}</div>
+    <div class="section">&#9660; ${esc(proto.toUpperCase())} Protocol</div>
+    <div class="f"><b>Event type:</b> <span class="v yellow">${esc(ev.event_type)}</span></div>
+    ${ev.session_id ? `<div class="f"><b>Session:</b> <span class="v">${esc(ev.session_id)}</span></div>` : ''}
+    ${ev.method ? `<div class="f"><b>Method:</b> <span class="v yellow">${esc(ev.method)}</span></div>` : ''}
+    ${ev.url ? `<div class="f"><b>URI:</b> <span class="v">${esc(ev.url)}</span></div>` : ''}
+    ${ev.username ? `<div class="f"><b>User:</b> <span class="v">${esc(ev.username)}</span> ${ev.password ? '<span class="v">/ ' + esc(ev.password) + '</span>' : ''}</div>` : ''}
+    ${ev.user_agent ? `<div class="f"><b>User-Agent:</b> <span class="v">${esc(ev.user_agent)}</span></div>` : ''}
+    ${ev.tool ? `<div class="f"><b>Tool:</b> <span class="info-tool">${esc(ev.tool)}</span></div>` : ''}
+    <div class="section">&#9660; ATT&amp;CK Correlation</div>
+    ${ev.technique ? `
+    <div class="f"><b>Technique:</b> <span class="v green">${esc(ev.technique)}</span></div>
+    <div class="f"><b>Tactic:</b> <span class="v green">${esc(ev.tactic || '')}</span></div>
+    <div class="f"><b>Confidence:</b> <span class="v">${ev.confidence ? (ev.confidence * 100).toFixed(0) + '%' : '-'}</span></div>`
+    : '<div class="f"><span class="info-dim">no technique matched</span></div>'}
+    ${ev.command ? `<div class="section">&#9660; Command</div><div class="f"><span class="v yellow">${esc(ev.command)}</span></div>` : ''}
+    ${ev.raw ? `<div class="section">&#9660; Raw</div><div class="f"><span class="v info-dim">${esc(trunc(ev.raw, 300))}</span></div>` : ''}
+  `;
+}
+
+function len(ev) {
+  return (ev.raw || ev.command || ev.url || '').length;
+}
+function trunc(s, n) { return s.length > n ? s.slice(0, n) + '…' : s; }
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function applyFilter() { render(); }
+document.getElementById('filter').addEventListener('keydown', e => { if (e.key === 'Enter') applyFilter(); });
+
+function exportStix() {
+  window.open('/api/export/stix', '_blank');
+}
+function exportCsv() {
+  const rows = attackers.map(a => ({
+    key: a.key, src_ips: (a.src_ips||[]).join('|'), score: a.score, events: a.event_count,
+    honeypots: (a.honeypots_hit||[]).join('|'), techniques: (a.techniques||[]).join('|'),
+    tools: (a.tools||[]).join('|'), last_seen: a.last_seen,
+  }));
+  const csv = [Object.keys(rows[0]||{}).join(',')].concat(
+    rows.map(r => Object.values(r).map(v => '"' + String(v).replace(/"/g,'""') + '"').join(','))
+  ).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
+  a.download = 'canary-attackers.csv';
+  a.click();
+}
+
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>
